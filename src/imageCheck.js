@@ -29,7 +29,7 @@ const runCheck = (client) => {
       fs.rename(oldDir, newDir, (err) => { // Move it to the new directory
         if (err) console.log(err)
 
-        removeDuplicates(outboundPath, { exact: false, tolerance: 0.5 }).then(results => {
+        removeDuplicates(outboundPath, { exact: false, tolerance: 0.5, threshold: 0.5 }).then(results => {
           // Delete dupes in the new directory
           if (!!results && results.retained.length && results.removed.length) {
             // The deduplication library keeps the "best" image not the newer or older one, so we need to read the timestamp of the retained/removed.
