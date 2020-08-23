@@ -1,4 +1,5 @@
 const fs = require('fs')
+const FileType = require('file-type');
 const request = require('request')
 const imageCheck = require('./imageCheck')
 
@@ -22,8 +23,21 @@ const getMessageImages = (msg) => { // Take the embeds(s)/attachment(s) from a m
 }
 
 const downloadImage = (url, id, type, callback) => {
+  const path = `${__dirname}/inbound/${id}.${type}`
   request.head(url, (_err, _res, _body) => {
-    request(url).pipe(fs.createWriteStream(`${__dirname}/inbound/${id}.${type}`)).on('close', callback)
+    request(url).pipe(fs.createWriteStream(path)).on('close', (f) => {
+      FileType.fromFile(path).then(type => {
+        if (type && type.ext && imageType(`.${type.ext}`)) {
+          callback()
+        } else {
+          // The filetype was valid in the URL, but the actual file type is not valid!
+          fs.unlink(path, (err) => {
+            if (err) console.log(err)
+            console.log('Deleted invalid file from inbound folder')
+          })
+        }
+      })
+    })
   })
 }
 

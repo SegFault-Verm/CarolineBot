@@ -1,5 +1,5 @@
 {
-  "name": "JessicaBot",
+  "name": "carolinebot",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -24,6 +24,7 @@
   "dependencies": {
     "discord.js": "^12.3.1",
     "dupe-images": "git+https://github.com/SegFault-Verm/dupe-images.git",
+    "file-type": "^14.7.1",
     "request": "^2.88.2"
   }
 }
