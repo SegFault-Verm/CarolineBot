@@ -1,7 +1,8 @@
 const fs = require('fs')
-const FileType = require('file-type');
+const FileType = require('file-type')
 const request = require('request')
 const imageCheck = require('./imageCheck')
+const gm = require('gm')
 
 const imageType = (imageURL) => {
   const match = imageURL.match(/\.(png|jpg|gif|bmp)$/)
@@ -22,12 +23,24 @@ const getMessageImages = (msg) => { // Take the embeds(s)/attachment(s) from a m
   return images
 }
 
-const downloadImage = (url, id, type, callback) => {
+const gifToPNG = (path) => {
+  return new Promise((resolve, reject) => {
+    gm(path).selectFrame(0).write(path, (err) => {
+      if (err) reject(err)
+      resolve(path)
+    })
+  })
+}
+
+const downloadImage = (url, id, type, gif, callback) => {
   const path = `${__dirname}/inbound/${id}.${type}`
   request.head(url, (_err, _res, _body) => {
     request(url).pipe(fs.createWriteStream(path)).on('close', (f) => {
       FileType.fromFile(path).then(type => {
         if (type && type.ext && imageType(`.${type.ext}`)) {
+          if (type.ext === 'gif') {
+            gifToPNG(path).then(callback())
+          }
           callback()
         } else {
           // The filetype was valid in the URL, but the actual file type is not valid!
@@ -46,11 +59,8 @@ const run = (msg, client) => {
     const id = `${msg.author.id}_${msg.id}_${msg.createdTimestamp}`
 
     const type = imageType(imageURL)
-    if (type === 'gif') {
-      // TODO: Download, and then convert first frame to png and save
-      return false
-    } else if (type) {
-      downloadImage(imageURL, id, type, () => {
+    if (type) {
+      downloadImage(imageURL, id, type, false, () => {
         if (!imageCheck.locked) imageCheck.runCheck(client) // Force imageCheck to run after the image is downloaded.
       })
     }
