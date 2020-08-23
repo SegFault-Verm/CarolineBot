@@ -25,14 +25,19 @@ const getMessageImages = (msg) => { // Take the embeds(s)/attachment(s) from a m
 
 const gifToPNG = (path) => {
   return new Promise((resolve, reject) => {
-    gm(path).selectFrame(0).write(path, (err) => {
+    gm(path).selectFrame(0).write(path.replace('.gif', '.png'), (err) => { //ImageMagick and GraphicsMagick are needed for this. Manual install.
       if (err) reject(err)
-      resolve(path)
+      setTimeout(() => {
+        fs.unlink(path, (errUnlink) => {
+          if (errUnlink) reject(errUnlink)
+          resolve(path)
+        })
+      }, 3000)
     })
   })
 }
 
-const downloadImage = (url, id, type, gif, callback) => {
+const downloadImage = (url, id, type, callback) => {
   const path = `${__dirname}/inbound/${id}.${type}`
   request.head(url, (_err, _res, _body) => {
     request(url).pipe(fs.createWriteStream(path)).on('close', (f) => {
@@ -40,8 +45,9 @@ const downloadImage = (url, id, type, gif, callback) => {
         if (type && type.ext && imageType(`.${type.ext}`)) {
           if (type.ext === 'gif') {
             gifToPNG(path).then(callback())
+          } else {
+            callback()
           }
-          callback()
         } else {
           // The filetype was valid in the URL, but the actual file type is not valid!
           fs.unlink(path, (err) => {
@@ -60,7 +66,7 @@ const run = (msg, client) => {
 
     const type = imageType(imageURL)
     if (type) {
-      downloadImage(imageURL, id, type, false, () => {
+      downloadImage(imageURL, id, type, () => {
         if (!imageCheck.locked) imageCheck.runCheck(client) // Force imageCheck to run after the image is downloaded.
       })
     }

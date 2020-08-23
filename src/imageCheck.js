@@ -23,9 +23,15 @@ const runCheck = (client) => {
 
   fs.readdir(inboundPath, (err, files) => { // Get the files in the inbound directory
     if (err) console.log(err)
-    if (files && files[0]) { // Only take the first one
-      const oldDir = path.join(inboundPath, files[0])
-      const newDir = path.join(outboundPath, files[0])
+
+    const filteredFiles = files.filter(file => {
+      if(file.match(/\.gif/)) return false
+      return true
+    })
+
+    if (filteredFiles && filteredFiles[0]) { // Only take the first one
+      const oldDir = path.join(inboundPath, filteredFiles[0])
+      const newDir = path.join(outboundPath, filteredFiles[0])
       fs.rename(oldDir, newDir, (err) => { // Move it to the new directory
         if (err) console.log(err)
 
@@ -45,7 +51,6 @@ const runCheck = (client) => {
               punishUser(client, parts2)
             }
           }
-
           locked = false
         })
       })
