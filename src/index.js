@@ -6,68 +6,48 @@ const imageFetch = require('./imageFetch')
 const Discord = require('discord.js')
 const client = new Discord.Client()
 
+const role_voteMuted = '583385070337785894'
+
 client.on('ready', () => {
   console.log('Caroline is ready.')
   client.user.setActivity('im 13 years old')
 })
 
-const getWarningEmbed = (msg, edit = false) => {
-  const emb = edit ? msg.embeds[0] : { ...config.defaultEmbed }
-
-  emb.description = emb.description.length ? emb.description
-    : `Uh, actually <@${msg.author.id}>, somebody has already posted this image in general. ${config.muteUsers ? 'You have been muted for 5 minutes.' : ''}`
-
-  if (config.devMode) {
-    emb.fields[0] = {
-      name: '------',
-      value: `Sensitivity: ${Math.round(config.similarityValue * 1000) / 1000} (0 = identical)
-      Mute Users: ${config.muteUsers}
-      Delete Messages: ${config.deleteMessages}
-      ${edit ? '' : `
-      The following attachment(s) show the difference between the image you posted \
-      (left) and the old image (right).`}`,
-      inline: true
-    }
-  } else {
-    emb.fields = []
+const getWarningEmbed = (authorid, matchingLinks) => {
+  return  {
+    description: `Uh, actually <@${authorid}>, somebody has already posted this image in general. ${config.muteUsers ? 'You have been muted for 5 minutes.' : ''}`,
+    color: 14070718,
+    fields: matchingLinks,
   }
-
-  return emb
-}
-
-const reactWithSettings = (msg) => {
-  /*if (config.devMode) {
-    msg.react('⬆️')
-      .then(() => msg.react('⬇️'))
-      .then(() => msg.react('🙊'))
-      .then(() => msg.react('🗑️'))
-      .then(() => msg.react('⚙️'))
-  } else {
-    msg.react('⚙️')
-  }*/
 }
 
 const fullImageCheck = (msg) => {
   if (msg.channel.id !== secrets.generalID) return
   if (msg.author === client.user) return
-  if (msg.member && (msg.member.hasPermission('KICK_MEMBERS') && !msg.author.id === '162720455801700352')) return
+  //if (msg.member && (msg.member.hasPermission('KICK_MEMBERS') && !msg.author.id === '162720455801700352')) return
   imageFetch(msg).then(result => {
     if (result.repost) {
-      msg.reply({ embed: getWarningEmbed(msg) }).then((herMsg) => {
-        if (config.devMode) {
-          const files = result.values.slice(0, 10).map(v => new Discord.MessageAttachment(v.devPath))
-          msg.reply({ files: files })
+
+      const matchingFieldList = result.values.sort((a, b) => a.equality-b.equality).map(val => {
+        const messageID = val.devPath.split('/').slice(-1)[0].split('_')[1]
+        const messageLink = `https://discordapp.com/channels/${msg.guild.id}/${msg.channel.id}/${messageID}`
+        const fieldVal = {
+          name: `${(val.equality * 1000).toFixed(2)}% different to:`,
+          value: messageLink,
         }
-        reactWithSettings(herMsg)
-      })
-      if (config.deleteMessages) msg.delete()
+        return fieldVal
+      }).slice(0, 9)
+
+
+      msg.reply({ embed: getWarningEmbed(msg.author.id, matchingFieldList) })
       if (config.muteUsers) {
-        const voteMuted = msg.guild.roles.cache.find(r => r.name === 'votemuted')
-        msg.member.roles.add(voteMuted)
+        msg.member.roles.add(role_voteMuted).then(() => { if (config.deleteMessages) msg.delete() }).catch(console.log)
         mutedList.push({
           authorID: msg.author.id,
-          timeout: new Date().getTime() + (5 * 1000 * 60)
+          timeout: new Date().getTime() + (0.5 * 1000 * 60)
         })
+      }else{
+        if (config.deleteMessages) msg.delete()
       }
     }
   })
@@ -87,10 +67,9 @@ client.on('message', msg => {
   mutedList.forEach((entry, index) => {
     if (entry.timeout < msg.createdTimestamp) {
       const memb = msg.guild.members.cache.get(entry.authorID)
-      const voteMuted = msg.guild.roles.cache.find(r => r.name === 'votemuted')
       if (memb) {
         mutedList.splice(index, 1)
-        msg.member.roles.remove(voteMuted)
+        memb.roles.remove(role_voteMuted).catch()
       }
     }
   })
@@ -102,24 +81,6 @@ client.on('messageUpdate', (oldMsg, newMsg) => {
   if (oldMsg.cleanContent !== newMsg.cleanContent) {
     fullImageCheck(newMsg)
   }
-})
-
-client.on('messageReactionAdd', (reaction, user) => {
-  if (user === client.user || reaction.message.author !== client.user) return
-  
-  const member = reaction.message.channel.guild.members.cache.get(user.id)
-  if (!member || !member.hasPermission('KICK_MEMBERS')) return
-
-  reaction.message.reactions.removeAll()
-
-  if (reaction.emoji.name === '⬆️') config.similarityValue += 0.005
-  if (reaction.emoji.name === '⬇️') config.similarityValue -= 0.005
-  if (reaction.emoji.name === '🙊') config.muteUsers = !config.muteUsers
-  if (reaction.emoji.name === '🗑️') config.deleteMessages = !config.deleteMessages
-  if (reaction.emoji.name === '⚙️') config.devMode = !config.devMode
-
-  reaction.message.edit({ embed: getWarningEmbed(reaction.message) })
-  reactWithSettings(reaction.message)
 })
 
 client.login(secrets.token)
