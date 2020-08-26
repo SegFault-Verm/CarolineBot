@@ -27,11 +27,10 @@ const getMessageImages = (msg) => { // Take the embeds(s)/attachment(s) from a m
     if(!embedLink) return
     images.push(embedLink)
   })
-  if(!images.length){
-    // Sometimes images with embeds hosted on discord don't count as "embeds" or "attachments", so I'm forced to take the link from the message.
-    const matchURL = msg.cleanContent.match(/http(s):\/\/.*.(png|jpg|gif|bmp)/gm)
-    return matchURL || []
-  }
+  
+  // Detect also images in message
+  images.push(...msg.cleanContent.match(/http(s):\/\/.*.(png|jpg|gif|bmp)/gm)||[]);
+
   return images
 }
 
