@@ -1,8 +1,8 @@
 const config = {
   devMode: true,
-  similarityValue: 10,
+  similarityValue: 9,
   muteUsers: true,
-  deleteMessages: true,
+  deleteMessages: true
 }
 
 module.exports = config
