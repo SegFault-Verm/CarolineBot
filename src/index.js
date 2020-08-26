@@ -6,47 +6,43 @@ const imageFetch = require('./imageFetch')
 const Discord = require('discord.js')
 const client = new Discord.Client()
 
-const role_voteMuted = '583385070337785894'
-
 client.on('ready', () => {
   console.log('Caroline is ready.')
   client.user.setActivity('im 13 years old')
 })
 
 const getWarningEmbed = (authorid, matchingLinks) => {
-  return  {
+  return {
     description: `Uh, actually <@${authorid}>, somebody has already posted this image in general. ${config.muteUsers ? 'You have been muted for 5 minutes.' : ''}`,
     color: 14070718,
-    fields: matchingLinks,
+    fields: matchingLinks
   }
 }
 
 const fullImageCheck = (msg) => {
   if (msg.channel.id !== secrets.generalID) return
   if (msg.author === client.user) return
-  //if (msg.member && (msg.member.hasPermission('KICK_MEMBERS') && !msg.author.id === '162720455801700352')) return
+  if (msg.member && (msg.member.hasPermission('KICK_MEMBERS') && !msg.author.id === '162720455801700352')) return
   imageFetch(msg).then(result => {
     if (result.repost) {
-
-      const matchingFieldList = result.values.sort((a, b) => a.equality-b.equality).map(val => {
+      const matchingFieldList = result.values.sort((a, b) => a.equality - b.equality).map(val => {
         const messageID = val.devPath.split('/').slice(-1)[0].split('_')[1]
         const messageLink = `https://discordapp.com/channels/${msg.guild.id}/${msg.channel.id}/${messageID}`
         const fieldVal = {
           name: `${(val.equality * 1000).toFixed(2)}% different to:`,
-          value: messageLink,
+          value: messageLink
         }
         return fieldVal
       }).slice(0, 9)
 
-
       msg.reply({ embed: getWarningEmbed(msg.author.id, matchingFieldList) })
       if (config.muteUsers) {
-        msg.member.roles.add(role_voteMuted).then(() => { if (config.deleteMessages) msg.delete() }).catch(console.log)
+        msg.member.roles.add(secrets.role_voteMuted).then(() => { if (config.deleteMessages) msg.delete() }).catch(console.log)
         mutedList.push({
           authorID: msg.author.id,
-          timeout: new Date().getTime() + (0.5 * 1000 * 60)
+          timeout: new Date().getTime() + (5 * 1000 * 60)
         })
-      }else{
+      } else {
         if (config.deleteMessages) msg.delete()
       }
     }
@@ -55,7 +51,6 @@ const fullImageCheck = (msg) => {
 
 const mutedList = []
 client.on('message', msg => {
-
   if (msg.channel.type === 'dm') {
     console.log(`DM: ${msg.author.tag}: ${msg.cleanContent}`)
     if (Math.floor(Math.random() * 10) === 0) {
@@ -69,7 +64,7 @@ client.on('message', msg => {
       const memb = msg.guild.members.cache.get(entry.authorID)
       if (memb) {
         mutedList.splice(index, 1)
-        memb.roles.remove(role_voteMuted).catch()
+        memb.roles.remove(secrets.role_voteMuted).catch()
       }
     }
   })

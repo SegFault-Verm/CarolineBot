@@ -4,10 +4,8 @@ const request = require('request')
 const gm = require('gm')
 const config = require('../config')
 const path = require('path')
-const sizeOf = require('image-size');
 
 const outboundPath = path.join(__dirname, 'outbound')
-const comparisons = path.join(__dirname, 'comparisons')
 
 const imageType = (imageURL) => {
   const match = imageURL.match(/\.(png|jpg|gif|bmp)$/)
@@ -32,8 +30,8 @@ const getMessageImages = (msg) => { // Take the embeds(s)/attachment(s) from a m
   if (!images.length) {
     // Sometimes images with embeds hosted on discord don't count as "embeds" or "attachments", so I'm forced to take the link from the message.
     // Whitelisting discordapp.net so as not to expose the IP to external servers. I think this bug only happens when hosted on discord anyway.
-    const matchURL = msg.cleanContent.match(/(https:\/\/.+.discordapp\.net.+\.(png|jpg|gif|bmp))(\s|$)s/gm)
-    return matchURL ? (matchURL[1] ? matchURL[1] : []) : []
+    const matchURL = msg.cleanContent.match(/https:\/\/.+\.(discordapp|imgur|vgy)\.(com|net|me)\/[^.]+\.(png|jpg|gif|bmp)/gm)
+    if (matchURL) images.push(matchURL[0])
   }
   return images
 }
@@ -77,16 +75,12 @@ const downloadImage = (url, id, type, callback) => {
   })
 }
 
-const compareImageLight = (newBMP, compDir, f) => {
-  return fs.readFileSync(compDir, 'base64') === newBMP;
-}
-
 const compareImageHeavy = (newImagePath, compDir, f) => {
   return new Promise((resolve, reject) => {
     gm.compare(newImagePath, compDir, (err, isEqual, equality, raw) => { // Compare inbound and outbound
       if (err) reject(err)
-      if (equality < (config.similarityValue/1000)) { // If they're similar enough
-          resolve({ matches: true, devPath: compDir, equality })
+      if (equality < (config.similarityValue / 1000)) { // If they're similar enough
+        resolve({ matches: true, devPath: compDir, equality })
       } else {
         resolve({ matches: false, equality })
       }
@@ -94,45 +88,32 @@ const compareImageHeavy = (newImagePath, compDir, f) => {
   })
 }
 
-const compareImages = (newImagePath, doMatch) => {
+const compareImages = (newImagePath) => {
   return new Promise((resolve, reject) => {
     fs.readdir(outboundPath, (err, outFiles) => { // Get all files in the outbound folder
       if (err) reject(err)
 
-      const newBMP = fs.readFileSync(newImagePath, 'base64');
-      
+      const newBMP = fs.readFileSync(newImagePath, 'base64')
+
       console.log('- Attempting quick comparison')
       let bufferFound = false
       outFiles.some(f => {
         const compDir = path.join(outboundPath, f)
-        if(fs.readFileSync(compDir, 'base64') === newBMP){ // Before doing a heavy compare of the images, try to find one with an identical buffer.
+        if (fs.readFileSync(compDir, 'base64') === newBMP) { // Before doing a heavy compare of the images, try to find one with an identical buffer.
           bufferFound = true
-          resolve({ repost: true, values: [{ matches: true, devPath: compDir, equality: 0}]}) // If we find one identical one, no point looking for more.
+          console.log('- Found identical image')
+          resolve({ repost: true, values: [{ matches: true, devPath: compDir, equality: 0 }] }) // If we find one identical one, no point looking for more.
         }
       })
 
-      if(!bufferFound){
-
-        let newImgDims = null //image-size likes to throw random errors, but I want to keep this synchronous
-        try {newImgDims = sizeOf(newImagePath)} catch (error) {}
-
+      if (!bufferFound) {
+        console.log('- Attempting full comparison')
         const promises = []
         outFiles.forEach(f => { // For each of them
           const compDir = path.join(outboundPath, f)
-
-          let check = false  //image-size likes to throw random errors, but I want to keep this synchronous
-          try {
-            compDims = sizeOf(compDir)
-            // Only bother comparing the image if the ratios are similar
-            const heightDifference = (Math.abs(compDims.height - newImgDims.height) / newImgDims.height) <= 0.5
-            const widthDifference = (Math.abs(compDims.height - newImgDims.width) / newImgDims.width) <= 0.5
-            check = heightDifference && widthDifference
-
-          } catch (error) { check = true }
-
-          if(check) promises.push(compareImageHeavy(newImagePath, compDir, f))
+          promises.push(compareImageHeavy(newImagePath, compDir, f))
         })
-        console.log('- Attempting full comparison')
+
         Promise.all(promises).then(vals => {
           const findRepost = vals.filter(val => !!val.matches)
           if (findRepost.length > 0) {
