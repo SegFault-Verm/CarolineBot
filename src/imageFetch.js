@@ -28,12 +28,10 @@ const getMessageImages = msg => {
 	let images = new Set();
 
 	// Check attachment(s)
-	if (msg.attachments && msg.attachments.size) {
+	msg.attachments.each(m => {
 		// Loop through all attachments, find any with width parameter (image)
-		msg.attachments.each(m => {
-			if (m.width) images.add(cleanLink(m.url));
-		});
-	}
+		if (m.width) images.add(cleanLink(m.url));
+	});
 
 	// Check embed(s)
 	for (let i = 0; i < msg.embeds.length; i++) {
