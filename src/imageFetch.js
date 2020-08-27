@@ -7,33 +7,63 @@ const path = require('path')
 
 const outboundPath = path.join(__dirname, 'outbound')
 
+/**
+ * Unknown function.
+ * It was only used for checking `message.embeds[n].url`. Not used in new extraction function.
+ * @deprecated
+ */
 const imageType = (imageURL) => {
   const match = imageURL.match(/\.(png|jpg|gif|bmp)$/)
   if (match && match[1]) return match[1]
   return null
 }
 
-const getMessageImages = (msg) => { // Take the embeds(s)/attachment(s) from a message.
-  const images = []
+/**
+ * Extract a unique set of image links from a message
+ * @param {Discord.Message} msg The message the user sent
+ * @returns {Array<String>} Image URL's or empty array
+ */
+const getMessageImages = msg => {
+	// To make URL's added exclusive
+	let images = new Set();
 
-  msg.attachments.each(attachment => {
-    images.push(attachment.url)
-  })
-  msg.embeds.forEach(embed => {
-    const thumbnailLink = embed.thumbnail ? embed.thumbnail.url : null
-    const embedLink = thumbnailLink || embed.url || (embed.fields[0] ? embed.fields[0].value : null)
-    if (!embedLink) return
-    if (imageType(embedLink)) {
-      images.push(embedLink)
-    }
-  })
-  if (!images.length) {
-    // Sometimes images with embeds hosted on discord don't count as "embeds" or "attachments", so I'm forced to take the link from the message.
-    // Whitelisting discordapp.net so as not to expose the IP to external servers. I think this bug only happens when hosted on discord anyway.
-    const matchURL = msg.cleanContent.match(/https:\/\/.+\.(discordapp|imgur|vgy)\.(com|net|me)\/[^.]+\.(png|jpg|gif|bmp)/gm)
-    if (matchURL) images.push(matchURL[0])
-  }
-  return images
+	// Check attachment(s)
+	if (msg.attachments && msg.attachments.size) {
+		// Loop through all attachments, find any with width parameter (image)
+		msg.attachments.each(m => {
+			if (m.width) images.add(cleanLink(m.url));
+		});
+	}
+
+	// Check embed(s)
+	for (let i = 0; i < msg.embeds.length; i++) {
+		// Embed.Image
+		if (msg.embeds[i].image) images.add(cleanLink(msg.embeds[i].image.url));
+
+		// Then check if there's a thumbnail
+		if (msg.embeds[i].thumbnail) images.add(cleanLink(msg.embeds[i].thumbnail.url));
+	}
+	// Match text content
+	if (msg.cleanContent) {
+		let r = msg.cleanContent.match(/https:\/\/.+\.(discordapp|imgur|vgy)\.(com|net|me)\/[^.]+\.(png|jpg|gif|bmp)/gm) || [];
+		r.forEach(link => images.add(cleanLink(link)))
+	}
+
+	return Array.from(images);
+}
+
+/**
+ * Clear away any query strings and anchors in links
+ * @param {String} imageLink The link to clean up
+ * @returns {String}
+ */
+const cleanLink = imageLink => {
+	if (/\.(png|jpg|gif|bmp)$/.test(imageLink)) return imageLink;
+
+	// Deconstruct URL
+	let r = url.parse(imageLink);
+	// Replace #hash and ?k=v&a=b with nothing
+	return imageLink.replace(r.hash,"").replace(r.search, "");
 }
 
 const gifToPNG = (path) => {
