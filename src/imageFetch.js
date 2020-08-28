@@ -4,12 +4,13 @@ const request = require('request')
 const gm = require('gm')
 const config = require('../config')
 const path = require('path')
+const { addImageAttempt, getCached } = require('./fileController')
+const url = require("url")
 
 const outboundPath = path.join(__dirname, 'outbound')
 
 /**
- * Unknown function.
- * It was only used for checking `message.embeds[n].url`. Not used in new extraction function.
+ * Still in use, but to be removed soon.
  * @deprecated
  */
 const imageType = (imageURL) => {
@@ -29,21 +30,18 @@ const getMessageImages = msg => {
 
 	// Check attachment(s)
 	msg.attachments.each(m => {
-		// Loop through all attachments, find any with width parameter (image)
-		if (m.width) images.add(cleanLink(m.url));
+		// Loop through all attachments, find any with notable width parameter (image)
+		if (m.width && m.width>64) images.add(cleanLink(m.url));
 	});
 
 	// Check embed(s)
 	for (let i = 0; i < msg.embeds.length; i++) {
-		// Embed.Image
 		if (msg.embeds[i].image) images.add(cleanLink(msg.embeds[i].image.url));
-
-		// Then check if there's a thumbnail
 		if (msg.embeds[i].thumbnail) images.add(cleanLink(msg.embeds[i].thumbnail.url));
 	}
 	// Match text content
 	if (msg.cleanContent) {
-		let r = msg.cleanContent.match(/https:\/\/.+\.(discordapp|imgur|vgy)\.(com|net|me)\/[^.]+\.(png|jpg|gif|bmp)/gm) || [];
+		let r = msg.cleanContent.match(/https:\/\/.+\.(discordapp|imgur|vgy|tenor)\.(com|net|me)\/[^.]+\.(png|jpg|gif|bmp)/gm) || [];
 		r.forEach(link => images.add(cleanLink(link)))
 	}
 
@@ -116,6 +114,34 @@ const compareImageHeavy = (newImagePath, compDir, f) => {
   })
 }
 
+recurseChunks = (chunks, newImagePath, finishedCallback) => {
+  if(chunks.length){
+    const chunk = chunks[0]
+    const chunkPromises = []
+    chunk.forEach(f => {
+      const compDir = path.join(outboundPath, f)
+      chunkPromises.push(compareImageHeavy(newImagePath, compDir, f))
+    })
+  
+    Promise.all(chunkPromises).then(vals => {
+      const findRepost = vals.filter(val => !!val.matches)
+      if (findRepost.length > 0) {
+        console.log(`-- Comparison found matching results in chunk ${chunkNum}/${chunks.length}`)
+        finishedCallback({ repost: true, values: findRepost })
+        return
+      } else {
+        if(chunks[1]){
+          chunks.pop()
+          return recurseChunks(chunks, newImagePath, finishedCallback)
+        }else{
+          console.log('-- Comparison found no matching results.')
+          finishedCallback({repost: false})
+        }
+      }
+    }).catch(console.log)
+  }
+}
+
 const compareImages = (newImagePath) => {
   return new Promise((resolve, reject) => {
     fs.readdir(outboundPath, (err, outFiles) => { // Get all files in the outbound folder
@@ -136,22 +162,17 @@ const compareImages = (newImagePath) => {
 
       if (!bufferFound) {
         console.log('- Attempting full comparison')
-        const promises = []
-        outFiles.forEach(f => { // For each of them
-          const compDir = path.join(outboundPath, f)
-          promises.push(compareImageHeavy(newImagePath, compDir, f))
-        })
-
-        Promise.all(promises).then(vals => {
-          const findRepost = vals.filter(val => !!val.matches)
-          if (findRepost.length > 0) {
-            console.log('- Comparison found matching results.')
-            resolve({ repost: true, values: findRepost })
-          } else {
-            console.log('- Comparison found no matching results.')
-            resolve({ repost: false })
-          }
-        })
+        const fileCache = [...getCached(path.join(__dirname, 'store', 'imageCache.json')).data]
+        
+        if(fileCache.length >= 10){
+          let orderedFiles = fileCache.map(f => f.p)
+          let chunks = [...Array(Math.ceil(orderedFiles.length/2))].map((chunk, i) => {
+            return orderedFiles.splice(orderedFiles.length === 1 ? 0 : Math.ceil(orderedFiles.length/2), orderedFiles.length === 1 ? 1 : orderedFiles.length-1)
+          }).filter(f => f.length).reverse()
+          recurseChunks(chunks, newImagePath, resolve)
+        }else{
+          recurseChunks([outFiles], newImagePath, resolve)
+        }
       }
     })
   })
@@ -159,29 +180,39 @@ const compareImages = (newImagePath) => {
 
 const run = (msg) => {
   return new Promise((resolve, reject) => {
-    getMessageImages(msg).forEach(imageURL => {
-      const id = `${msg.author.id}_${msg.id}_${msg.createdTimestamp}`
-      const type = imageType(imageURL)
-      if (type) {
-        console.log(`Downloading image: ${imageURL}`)
-        downloadImage(imageURL, id, type, (imagePath) => {
-          const [updatedFileName] = imagePath.split('/').slice(-1)
-          compareImages(imagePath).then(result => {
-            if (result.repost) {
-              fs.unlink(imagePath, (err) => {
-                if (err) reject(err)
-                resolve(result)
-              })
-            } else {
-              fs.rename(imagePath, path.join(outboundPath, updatedFileName), (err) => {
-                if (err) reject(err)
-                resolve(result)
-              })
-            }
+    const allImages = getMessageImages(msg)
+    if(allImages.length){
+      allImages.forEach(imageURL => {
+        const id = `${msg.author.id}_${msg.id}_${msg.createdTimestamp}`
+        const type = imageType(imageURL)
+        if (type) {
+          console.log(`Downloading image: ${imageURL}`)
+          downloadImage(imageURL, id, type, (imagePath) => {
+            const [updatedFileName] = imagePath.split('/').slice(-1)
+            compareImages(imagePath).then(result => {
+              if (result.repost) {
+                fs.unlink(imagePath, (err) => {
+                  result.values.forEach(val => {
+                    const [oldFileName] = val.devPath.split('/').slice(-1)
+                    addImageAttempt(oldFileName)
+                  })
+                  if (err) reject(err)
+                  resolve(result)
+                })
+              } else {
+                fs.rename(imagePath, path.join(outboundPath, updatedFileName), (err) => {
+                  if (err) reject(err)
+                  addImageAttempt(updatedFileName)
+                  resolve(result)
+                })
+              }
+            })
           })
-        })
-      }
-    })
+        }
+      })
+    }else{
+      resolve({repost: false})
+    }
   })
 }
 

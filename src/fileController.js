@@ -17,9 +17,7 @@ const makeCache = () => {
   })
 }
 
-const getCached = (pth) => {
-  return JSON.parse(fs.readFileSync(pth))
-}
+const getCached = (pth) => JSON.parse(fs.readFileSync(pth))
 
 const putCached = (pth, data) => {
   const sortData = data.sort((a, b) => b.r - a.r)
@@ -53,5 +51,7 @@ const addImageAttempt = async (path) => {
 }
 
 module.exports = {
-  addImageAttempt
+  addImageAttempt,
+  getCached,
+  makeCache
 }
